@@ -1,0 +1,2 @@
+# Ensure our repo correctly displays as GDScript!
+*.* linguist-language=GDScript

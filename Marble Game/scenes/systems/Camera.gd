@@ -51,6 +51,9 @@ func _ready():
 	for i in range(distance_markers.get_child_count()):
 		distances.append(distance_markers.get_child(i).transform.origin.z)
 		
+		# Hide the meshes
+		distance_markers.get_child(i).hide()
+		
 	# Variable to store what distance we are currently set to
 	d = 0
 	
@@ -67,14 +70,14 @@ func _ready():
 		get_tree().quit()
 	
 	# Assign the SpringArm properties
-	springarm.spring_length = d 
+	springarm.spring_length = distances[d] 
 	springarm.shape.set_radius(SpringArmSphereRadius)
 	springarm.shape.set_margin(SpringArmSphereMargin)
 	springarm.add_excluded_object(wall_detector)
 	springarm.add_excluded_object(wall_detector_shape)
 	
 	# Ensure the target and camera are positioned properly
-	target.transform.origin.z = springarm.spring_length - TargetOffset
+	target.transform.origin.z = distances[d] - TargetOffset
 	camera.transform.origin.z = target.transform.origin.z
 
 	# Ensure we don't inherit rotational data from the player
@@ -83,11 +86,14 @@ func _ready():
 	# Set the WallDetector as top level so that we can properly position it 
 	# to the follow target's origin
 	wall_detector.set_as_toplevel(true)
+	
+	# Hide the target mesh
+	target.hide()
 
 # Allows mouse input
 func _input(event):
 	if CameraInputMode == InputMode.MOUSE or CameraInputMode == InputMode.HYBRID:
-		if event is InputEventMouseMotion:
+		if event is InputEventMouseMotion and mouse_captured:
 		
 			# Handle upwards movement
 			cam_up = deg2rad(event.relative.y * -1)

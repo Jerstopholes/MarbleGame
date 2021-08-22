@@ -1,4 +1,6 @@
 *.kerfluff
 *.import
 *.cfg
+*.odt
+*.~lock.gdd.odt#
 

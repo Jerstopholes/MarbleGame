@@ -40,11 +40,12 @@ onready var wall_detector_shape = $XRotater/WallDetector/WallDetectorShape
 # Called when the node enters the scene tree for the first time.
 func _ready():
 	# Determine the Camera's input mode.
-	if CameraInputMode == InputMode.MOUSE:
+	if CameraInputMode == InputMode.MOUSE or CameraInputMode == InputMode.HYBRID:
 		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
 		mouse_captured = true
-	else:
-		Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+	elif CameraInputMode == InputMode.GAMEPAD:
+		# The cursor isn't captured but we also don't want to show it until the player wants it shown
+		Input.set_mouse_mode(Input.MOUSE_MODE_HIDDEN)
 		mouse_captured = false
 		
 	# Get the distance marker's Z values to add to our zoom array
@@ -115,9 +116,10 @@ func _process(delta):
 	
 	# Count the number of frames since the mouse last moved.
 	if not mouse_moved:
-		frames += 1
 		if frames >= MaxFrameCount:
 			frames = MaxFrameCount
+		else:
+			frames += 1
 	else:
 		# The mouse has moved so reset the counter
 		frames = 0
@@ -131,10 +133,16 @@ func _process(delta):
 			Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
 
 	# Change the distance of the camera
-	if Input.is_action_just_pressed("zoom"):
-		d += 1
-		if d >= distances.size():
-			d = 0
+	if CameraInputMode == InputMode.MOUSE:
+		if Input.is_action_just_pressed("key_zoom"):
+			_change_distance()
+	elif CameraInputMode == InputMode.GAMEPAD:
+		if Input.is_action_just_pressed("gamepad_zoom"):
+			_change_distance()
+	elif CameraInputMode == InputMode.HYBRID:
+		if Input.is_action_just_pressed("key_zoom") or Input.is_action_just_pressed("gamepad_zoom"):
+			_change_distance()
+		
 	
 	# Rotate the camera
 	if mouse_moved:
@@ -165,7 +173,14 @@ func _process(delta):
 			SmoothSpeed)
 		else:
 			camera.transform.origin.z = target.transform.origin.z
-	
+
+# Changes the distance of the camera
+func _change_distance():
+	d += 1
+	if d >= distances.size():
+		d = 0
+
+
 # Allows collision if bodies are close enough to the camera
 func _on_DetectionSphere_body_entered(body):
 	if not body.is_in_group("noclip"):

@@ -1,17 +1,18 @@
-[gd_scene load_steps=9 format=2]
+[gd_scene load_steps=10 format=2]
 
 [ext_resource path="res://scenes/systems/Camera.gd" type="Script" id=1]
+[ext_resource path="res://CameraSystem/CheckInputs.gd" type="Script" id=2]
 
-[sub_resource type="CapsuleShape" id=9]
+[sub_resource type="CapsuleShape" id=1]
 
-[sub_resource type="SphereShape" id=3]
+[sub_resource type="SphereShape" id=2]
 radius = 1.5
 
-[sub_resource type="SphereShape" id=4]
+[sub_resource type="SphereShape" id=3]
 
-[sub_resource type="SphereMesh" id=12]
+[sub_resource type="SphereMesh" id=4]
 
-[sub_resource type="SpatialMaterial" id=13]
+[sub_resource type="SpatialMaterial" id=5]
 albedo_color = Color( 1, 0, 0.72549, 1 )
 emission_enabled = true
 emission = Color( 1, 0, 0.72549, 1 )
@@ -19,14 +20,14 @@ emission_energy = 1.0
 emission_operator = 0
 emission_on_uv2 = false
 
-[sub_resource type="CylinderMesh" id=10]
+[sub_resource type="CylinderMesh" id=6]
 top_radius = 0.1
 bottom_radius = 0.1
 height = 4.0
 radial_segments = 8
 rings = 2
 
-[sub_resource type="SpatialMaterial" id=11]
+[sub_resource type="SpatialMaterial" id=7]
 albedo_color = Color( 1, 0.513726, 0, 1 )
 emission_enabled = true
 emission = Color( 1, 0.513726, 0, 1 )
@@ -45,7 +46,7 @@ script = ExtResource( 1 )
 "noclip",
 ]]
 transform = Transform( 1, 0, 0, 0, -4.37114e-08, -1, 0, 1, -4.37114e-08, 0, 0, 0 )
-shape = SubResource( 9 )
+shape = SubResource( 1 )
 
 [node name="Camera" type="Camera" parent="XRotater"]
 current = true
@@ -55,35 +56,38 @@ far = 15000.0
 [node name="DetectionSphere" type="Area" parent="XRotater/Camera"]
 
 [node name="CollisionShape" type="CollisionShape" parent="XRotater/Camera/DetectionSphere"]
-shape = SubResource( 3 )
+shape = SubResource( 2 )
 
 [node name="SpringArm" type="SpringArm" parent="XRotater"]
-shape = SubResource( 4 )
+shape = SubResource( 3 )
 
 [node name="Target" type="MeshInstance" parent="XRotater/SpringArm"]
 transform = Transform( 0.3, 0, 0, 0, 0.3, 0, 0, 0, 0.3, 0, 0, 0 )
-mesh = SubResource( 12 )
-material/0 = SubResource( 13 )
+mesh = SubResource( 4 )
+material/0 = SubResource( 5 )
 
 [node name="DistanceMarkers" type="Spatial" parent="XRotater"]
 
 [node name="Minimum" type="MeshInstance" parent="XRotater/DistanceMarkers"]
 transform = Transform( 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 6 )
 cast_shadow = 0
-mesh = SubResource( 10 )
-material/0 = SubResource( 11 )
+mesh = SubResource( 6 )
+material/0 = SubResource( 7 )
 
 [node name="Medium" type="MeshInstance" parent="XRotater/DistanceMarkers"]
 transform = Transform( 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 10 )
 cast_shadow = 0
-mesh = SubResource( 10 )
-material/0 = SubResource( 11 )
+mesh = SubResource( 6 )
+material/0 = SubResource( 7 )
 
 [node name="Maximum" type="MeshInstance" parent="XRotater/DistanceMarkers"]
 transform = Transform( 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 13 )
 cast_shadow = 0
-mesh = SubResource( 10 )
-material/0 = SubResource( 11 )
+mesh = SubResource( 6 )
+material/0 = SubResource( 7 )
+
+[node name="CheckInputs" type="Node" parent="."]
+script = ExtResource( 2 )
 
 [connection signal="body_entered" from="XRotater/WallDetector" to="." method="_on_WallDetector_body_entered"]
 [connection signal="body_exited" from="XRotater/WallDetector" to="." method="_on_WallDetector_body_exited"]

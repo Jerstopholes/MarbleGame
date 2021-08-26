@@ -60,6 +60,6 @@ func _ready():
 	# mouse
 	if !InputMap.has_action("key_zoom"):
 		InputMap.add_action("key_zoom", MouseDeadZone)
-		var event = InputEventKey.new()
-		event.scancode = KEY_C
+		var event = InputEventMouseButton.new()
+		event.button_index = BUTTON_RIGHT
 		InputMap.action_add_event("key_zoom", event)

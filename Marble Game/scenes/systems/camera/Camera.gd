@@ -2,11 +2,14 @@ extends Spatial
 
 # These enums help us out in the editor.
 enum Mode { MOUSE, GAMEPAD }
-enum CollideMode { PULL_FORWARD_SMOOTH_BACK, INSTANT_FORWARD_AND_BACK }
+enum CollideMode { INSTANT_FORWARD_SMOOTH_BACK, INSTANT_FORWARD_AND_BACK }
+enum FollowMode { SMOOTH_INTERPOLATION, INSTANT }
 enum Inputs { GENERATE_FOR_ME, SPECIFY_MY_OWN }
 export (NodePath) var FollowTarget
-export (CollideMode) var CollisionResponse = CollideMode.PULL_FORWARD_SMOOTH_BACK
-export (float, 0.001, 0.1) var SmoothSpeed = 0.03
+export (FollowMode) var CameraFollowMode = FollowMode.SMOOTH_INTERPOLATION
+export (float, 0.001, 0.1) var FollowSmoothSpeed = 0.08
+export (CollideMode) var CollisionResponse = CollideMode.INSTANT_FORWARD_SMOOTH_BACK
+export (float, 0.001, 0.1) var CollisionSmoothSpeed = 0.03
 export (Mode) var InputMethod = Mode.MOUSE
 export (Inputs) var InputsToUse = Inputs.GENERATE_FOR_ME
 export (float) var MouseSensitivity = 10.0
@@ -17,7 +20,8 @@ export (float, 0.01, 170) var CameraFOV = 70.0
 export (Environment) var CameraEnvironment
 export (float, 0.01, 2.0) var SpringArmSphereRadius = 1
 export (float, 0.01, 10.0) var SpringArmSphereMargin = 1.0
-export (int) var MaxFrameCount = 5
+export (float, 1, 3) var CollisionProbeRadius = 1.5
+export (int) var FramesToWaitBeforeCollision = 5
 
 
 # Local variables
@@ -35,6 +39,7 @@ var frames : int = 0
 var probe : Array
 var wall_array : Array
 var wall_detector_offset : Vector3
+var camera_offset : Vector3
 var hit_length : float = 0
 var spring_length : float = 0
 var clipping : bool = false
@@ -48,6 +53,7 @@ onready var distance_markers = $XRotater/DistanceMarkers
 onready var wall_detector = $XRotater/WallDetector
 onready var wall_detector_shape = $XRotater/WallDetector/WallDetectorShape
 onready var CameraInput = $CameraInput
+onready var collision_probe = $XRotater/Camera/DetectionSphere/CollisionShape
 
 # Called when the node enters the scene tree for the first time.
 func _ready():
@@ -87,9 +93,14 @@ func _ready():
 	springarm.spring_length = distances[0] 
 	springarm.shape.set_radius(SpringArmSphereRadius)
 	springarm.shape.set_margin(SpringArmSphereMargin)
+	
+	# Add these nodes to be excluded by the spring arm to prevent false positive collisions
 	springarm.add_excluded_object(wall_detector)
 	springarm.add_excluded_object(wall_detector_shape)
 	springarm.add_excluded_object(follow_target)
+	
+	# Set the collision probe size
+	collision_probe.shape.radius = CollisionProbeRadius
 	
 	# Ensure the target and camera are positioned properly
 	target.transform.origin.z = distances[0] - CameraCollisionOffset
@@ -97,12 +108,13 @@ func _ready():
 
 	# Ensure we don't inherit rotational data from the player
 	self.set_as_toplevel(true)
-	
-	# Set the walldetector as toplevel
 	wall_detector.set_as_toplevel(true)
 	
 	# Store the offset of the wall detector to the follow target
 	wall_detector_offset = wall_detector.global_transform.origin - follow_target.global_transform.origin
+	
+	# Store the offset of the camera and follow target
+	camera_offset = self.global_transform.origin - follow_target.global_transform.origin
 	
 	# Hide the target mesh
 	target.hide()
@@ -124,6 +136,9 @@ func _process(delta):
 	
 	# Updates the basic camera settings
 	_update_camera_settings()
+	
+	# Updates the positioning of the camera
+	_update_camera_position()
 	
 	# Checks for camera input
 	_check_input()
@@ -165,13 +180,23 @@ func _update_camera_settings():
 	# geometry between itself and the player UNLESS there is geometry close enough to the camera, or the player has
 	# stopped moving the camera. 
 	if not rotation_happened:
-		if frames >= MaxFrameCount:
-			frames = MaxFrameCount
+		if frames >= FramesToWaitBeforeCollision:
+			frames = FramesToWaitBeforeCollision
 		else:
 			frames += 1
 	else:
 		# Rotation has happened so reset the counter
 		frames = 0
+
+# Updates the positioning of the camera
+func _update_camera_position():
+	# Determine the follow mode of the camera
+	if CameraFollowMode == FollowMode.SMOOTH_INTERPOLATION:
+		# Smoothly lerp the position of the camera to the follow target
+		self.global_transform.origin = lerp(self.global_transform.origin, follow_target.global_transform.origin + camera_offset, 0.08)
+	else:
+		# Instantly move the camera to match the follow target's position
+		self.global_transform.origin = follow_target.global_transform.origin
 
 # Checks the input of the camera
 func _check_input():
@@ -211,12 +236,12 @@ func _rotate_camera(delta):
 		# Apply the deadzone
 		cam_stick_input = _apply_gamepad_deadzone(cam_stick_input, 0.25)
 		
-		# Rotation happened if our cam_stick_input vector length is greater than zero
-		if cam_stick_input.length() > 0:
+		# Rotation happened if our cam_stick_input vector length is not equal to zero
+		if cam_stick_input.length() != 0:
 			rotation_happened = true
 		else:
 			rotation_happened = false
-		
+			
 		# Apply the rotation to the camera
 		self.rotate_y(cam_stick_input.x * GamepadSensitivity * delta)
 		x_rotater.rotate_x(cam_stick_input.y * GamepadSensitivity * delta)
@@ -231,15 +256,15 @@ func _occlusion_check():
 	# Compare the Target's z value to the Camera's z value. If it's less than the Camera, we know we are colliding, 
 	# so check if either the probe array is NOT empty or the Camera has stopped rotating to respond to collisions.
 	if tar_z < cam_z and clipping:
-		if frames >= MaxFrameCount or not probe.empty():
+		if frames >= FramesToWaitBeforeCollision or not probe.empty():
 			camera.transform.origin.z = target.transform.origin.z
 	else:
 		# Determine the camera's update strategy
-		if CollisionResponse == CollideMode.PULL_FORWARD_SMOOTH_BACK:
+		if CollisionResponse == CollideMode.INSTANT_FORWARD_SMOOTH_BACK:
 			# Smoothly lerp back to the starting position (great for adventure games).
 			camera.transform.origin.z = lerp(camera.transform.origin.z, 
 			target.transform.origin.z,
-			SmoothSpeed)
+			CollisionSmoothSpeed)
 		else:
 			# Snap back instantly (good for action games like third-person shooters)
 			camera.transform.origin.z = target.transform.origin.z

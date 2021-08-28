@@ -1,9 +1,10 @@
-[gd_scene load_steps=10 format=2]
+[gd_scene load_steps=9 format=2]
 
-[ext_resource path="res://scenes/systems/Camera.gd" type="Script" id=1]
-[ext_resource path="res://scenes/systems/CameraInput.gd" type="Script" id=3]
+[ext_resource path="res://scenes/systems/camera/Camera.gd" type="Script" id=1]
+[ext_resource path="res://scenes/systems/camera/CameraInput.gd" type="Script" id=2]
+[ext_resource path="res://scenes/systems/camera/3DDistanceMarker.tscn" type="PackedScene" id=3]
 
-[sub_resource type="CapsuleShape" id=8]
+[sub_resource type="CapsuleShape" id=1]
 height = 1.61749
 
 [sub_resource type="SphereShape" id=2]
@@ -21,27 +22,12 @@ emission_energy = 1.0
 emission_operator = 0
 emission_on_uv2 = false
 
-[sub_resource type="CylinderMesh" id=6]
-top_radius = 0.1
-bottom_radius = 0.1
-height = 4.0
-radial_segments = 8
-rings = 2
-
-[sub_resource type="SpatialMaterial" id=7]
-albedo_color = Color( 1, 0.513726, 0, 1 )
-emission_enabled = true
-emission = Color( 1, 0.513726, 0, 1 )
-emission_energy = 1.0
-emission_operator = 0
-emission_on_uv2 = false
-
 [node name="Camera" type="Spatial"]
 script = ExtResource( 1 )
 InputMethod = 1
 
 [node name="CameraInput" type="Node" parent="."]
-script = ExtResource( 3 )
+script = ExtResource( 2 )
 
 [node name="XRotater" type="Spatial" parent="."]
 
@@ -51,7 +37,7 @@ script = ExtResource( 3 )
 "noclip",
 ]]
 transform = Transform( 1, 0, 0, 0, -4.37114e-08, -1, 0, 1, -4.37114e-08, 0, 0, 0 )
-shape = SubResource( 8 )
+shape = SubResource( 1 )
 
 [node name="Camera" type="Camera" parent="XRotater"]
 current = true
@@ -73,23 +59,14 @@ material/0 = SubResource( 5 )
 
 [node name="DistanceMarkers" type="Spatial" parent="XRotater"]
 
-[node name="Minimum" type="MeshInstance" parent="XRotater/DistanceMarkers"]
-transform = Transform( 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 6 )
-cast_shadow = 0
-mesh = SubResource( 6 )
-material/0 = SubResource( 7 )
+[node name="1" parent="XRotater/DistanceMarkers" instance=ExtResource( 3 )]
+transform = Transform( 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 2 )
 
-[node name="Medium" type="MeshInstance" parent="XRotater/DistanceMarkers"]
-transform = Transform( 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 10 )
-cast_shadow = 0
-mesh = SubResource( 6 )
-material/0 = SubResource( 7 )
+[node name="2" parent="XRotater/DistanceMarkers" instance=ExtResource( 3 )]
+transform = Transform( 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 5 )
 
-[node name="Maximum" type="MeshInstance" parent="XRotater/DistanceMarkers"]
-transform = Transform( 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 13 )
-cast_shadow = 0
-mesh = SubResource( 6 )
-material/0 = SubResource( 7 )
+[node name="3" parent="XRotater/DistanceMarkers" instance=ExtResource( 3 )]
+transform = Transform( 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 8 )
 
 [connection signal="body_entered" from="XRotater/WallDetector" to="." method="_on_WallDetector_body_entered"]
 [connection signal="body_exited" from="XRotater/WallDetector" to="." method="_on_WallDetector_body_exited"]

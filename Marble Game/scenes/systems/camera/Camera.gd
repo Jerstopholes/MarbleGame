@@ -10,17 +10,16 @@ export (FollowMode) var CameraFollowMode = FollowMode.SMOOTH_INTERPOLATION
 export (float, 0.001, 0.1) var FollowSmoothSpeed = 0.08
 export (CollideMode) var CollisionResponse = CollideMode.INSTANT_FORWARD_SMOOTH_BACK
 export (float, 0.001, 0.1) var CollisionSmoothSpeed = 0.03
+export (float, 0, 2.0) var CameraCollisionOffset = 0.25
 export (Mode) var InputMethod = Mode.MOUSE
 export (Inputs) var InputsToUse = Inputs.GENERATE_FOR_ME
 export (float) var MouseSensitivity = 10.0
+export (float) var GamepadSensitivity = 2.75
 export (float, 0.01, 0.5) var GamepadDeadzone = 0.25
-export (float) var GamepadSensitivity = 2.5
-export (float, 0, 2.0) var CameraCollisionOffset = 0.25
-export (float, 0.01, 170) var CameraFOV = 70.0
+export (float, 0.01, 179) var CameraFOV = 70.0
 export (Environment) var CameraEnvironment
 export (float, 0.01, 2.0) var SpringArmSphereRadius = 1
 export (float, 0.01, 10.0) var SpringArmSphereMargin = 1.0
-export (float, 1, 3) var CollisionProbeRadius = 1.5
 export (int) var FramesToWaitBeforeCollision = 5
 
 
@@ -36,24 +35,24 @@ var follow_target : Node
 var d : int = 0
 var distances : Array
 var frames : int = 0
-var probe : Array
-var wall_array : Array
 var wall_detector_offset : Vector3
 var camera_offset : Vector3
 var hit_length : float = 0
 var spring_length : float = 0
 var clipping : bool = false
+var touching_wall : bool = false
+var target_y_rotation : float = 0
+
 
 # Node reference variables
 onready var x_rotater = $XRotater
 onready var camera = $XRotater/Camera
 onready var springarm = $XRotater/SpringArm
 onready var target = $XRotater/SpringArm/Target
-onready var distance_markers = $XRotater/DistanceMarkers
+onready var distance_markers = $DistanceMarkers
 onready var wall_detector = $XRotater/WallDetector
-onready var wall_detector_shape = $XRotater/WallDetector/WallDetectorShape
 onready var CameraInput = $CameraInput
-onready var collision_probe = $XRotater/Camera/DetectionSphere/CollisionShape
+onready var detection_spring = $XRotater/Camera/DetectionSpring
 
 # Called when the node enters the scene tree for the first time.
 func _ready():
@@ -70,7 +69,7 @@ func _ready():
 	for i in range(distance_markers.get_child_count()):
 		distances.append(distance_markers.get_child(i).transform.origin.z)
 		
-		# Hide the helper meshes
+		# Hide the markers
 		distance_markers.get_child(i).hide()
 		
 	# Variable to store what distance we are currently set to
@@ -96,11 +95,11 @@ func _ready():
 	
 	# Add these nodes to be excluded by the spring arm to prevent false positive collisions
 	springarm.add_excluded_object(wall_detector)
-	springarm.add_excluded_object(wall_detector_shape)
 	springarm.add_excluded_object(follow_target)
 	
-	# Set the collision probe size
-	collision_probe.shape.radius = CollisionProbeRadius
+	# Do the same for the detection spring on the camera
+	detection_spring.add_excluded_object(wall_detector)
+	detection_spring.add_excluded_object(follow_target)
 	
 	# Ensure the target and camera are positioned properly
 	target.transform.origin.z = distances[0] - CameraCollisionOffset
@@ -116,7 +115,7 @@ func _ready():
 	# Store the offset of the camera and follow target
 	camera_offset = self.global_transform.origin - follow_target.global_transform.origin
 	
-	# Hide the target mesh
+	# Hide the target visual aid
 	target.hide()
 
 # Allows mouse input
@@ -146,6 +145,8 @@ func _process(delta):
 	# Rotates the camera
 	_rotate_camera(delta)
 	
+	#_rotate_to_player()
+	
 	# Checks for occlusion/collision
 	_occlusion_check()
 	
@@ -155,13 +156,6 @@ func _update_camera_settings():
 	# Store the length of the springarm and its hit length
 	spring_length = springarm.spring_length
 	hit_length = springarm.get_hit_length()
-	
-	# Lets us know if the camera should be colliding with geometry by comparing the hit length 
-	# of the spring arm to its current specified length.
-	if hit_length < spring_length:
-		clipping = true
-	else:
-		clipping = false
 	
 	# Update the wall detector's position to the follow target's, plus the specified offset.
 	wall_detector.global_transform.origin = follow_target.global_transform.origin + wall_detector_offset
@@ -253,10 +247,29 @@ func _rotate_camera(delta):
 
 # Checks for occlusion
 func _occlusion_check():
-	# Compare the Target's z value to the Camera's z value. If it's less than the Camera, we know we are colliding, 
-	# so check if either the probe array is NOT empty or the Camera has stopped rotating to respond to collisions.
-	if tar_z < cam_z and clipping:
-		if frames >= FramesToWaitBeforeCollision or not probe.empty():
+	
+	# Lets us know if the camera should be colliding with geometry by comparing the hit length 
+	# of the spring arm to its current specified length.
+	if hit_length < spring_length:
+		clipping = true
+	else:
+		clipping = false
+	
+	# Store the distance between tar_z and cam_z.
+	var distance = cam_z - tar_z
+	
+	# We determine if the Camera is colliding by comparing the Target's Z value to the Camera's.
+	# If it's less than the Camera's, or the distance between the Camera and Target is very small AND
+	# the SpringArm itself is clipping, we know we are colliding with something.
+	if (tar_z < cam_z or abs(distance) < 0.1) and clipping:
+		
+		# We now want to ensure that the camera SHOULD be colliding against the found geometry.
+		# We don't want to collide while we're rotating the camera, UNLESS the detection spring
+		# finds geometry, or the player has stopped rotating the camera for the amount of frames
+		# that are specified to wait. When either is true, pull the Camera forward instantly.
+		if (frames >= FramesToWaitBeforeCollision or 
+			detection_spring.get_hit_length() < detection_spring.spring_length):
+				
 			camera.transform.origin.z = target.transform.origin.z
 	else:
 		# Determine the camera's update strategy
@@ -266,7 +279,7 @@ func _occlusion_check():
 			target.transform.origin.z,
 			CollisionSmoothSpeed)
 		else:
-			# Snap back instantly (good for action games like third-person shooters)
+			# Snap back instantly (great for action games like third-person shooters)
 			camera.transform.origin.z = target.transform.origin.z
 
 # Changes the current distance of the camera
@@ -278,6 +291,18 @@ func _change_distance():
 	if d >= distances.size():
 		d = 0
 
+# Rotates the camera to face the same way as the follow target
+func _rotate_to_player():
+	# Store the Target's y rotation
+	target_y_rotation = follow_target.rotation_degrees.y
+	
+	# Get the difference between Y angles and determine that we aren't touching a wall.
+	# If both conditions are met, we rotate the Camera to face behind the Target.
+	if (rotation_degrees.y - target_y_rotation) > 0.05 and not touching_wall:
+		rotate_y(-0.003)
+	elif (rotation_degrees.y - target_y_rotation) < -0.05 and not touching_wall:
+		rotate_y(0.003)
+	
 # We use this function to apply the deadzone for gamepads
 func _apply_gamepad_deadzone(var input_vector, var deadzone):
 	if input_vector.length() < deadzone:
@@ -288,46 +313,15 @@ func _apply_gamepad_deadzone(var input_vector, var deadzone):
 	# Return the input vector
 	return input_vector
 	
-# Allows collision if bodies are close enough to the camera
-func _on_DetectionSphere_body_entered(body):
-	if not body.is_in_group("noclip"):
-		
-		# Check to make sure this body doesn't exist in the array.
-		if probe.find(body) == -1:
-			# Add the body to the array
-			probe.append(body)
-			#print("Added " + str(body) + " at index [" + str(probe.size()-1) + "]")
-
-# Removes bodies from the probe array to disallow collisions until otherwise specified.
-func _on_DetectionSphere_body_exited(body):
-	if not body.is_in_group("noclip"):
-		
-		# Check the probe array to make sure it is not empty.
-		if probe.size() != -1:
-			# Search for the body and remove it
-			var body_to_remove = probe.find(body)
-			if body_to_remove != -1:
-				probe.remove(body_to_remove)
-				#print("Removed " + str(body) + " from index [" + str(probe.size()) + "]")
-
 # Lets us know when the player is touching a wall.
 func _on_WallDetector_body_entered(body):
-	if not body.is_in_group("player"):
-	
-		# Check to make sure this body doesn't exist in the array.
-		if wall_array.find(body) == -1:
-			# Add the body to the array
-			wall_array.append(body)
-			#print(wall_array)
+	if not body.is_in_group("exclude"):
+		touching_wall = true
+		print("Touching")
 
 # Lets us know when the player has stopped touching a wall.
 func _on_WallDetector_body_exited(body):
-	if not body.is_in_group("player"):
-		
-		# Check the wall array to make sure it is not empty.
-		if wall_array.size() != -1:
-			# Search for the body and remove it
-			var body_to_remove = wall_array.find(body)
-			if body_to_remove != -1:
-				wall_array.remove(body_to_remove)
-				#print(wall_array)
+	if not body.is_in_group("exclude"):
+		touching_wall = false
+		print("Not touching")
+

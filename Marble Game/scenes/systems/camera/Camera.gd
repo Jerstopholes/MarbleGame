@@ -21,6 +21,7 @@ export (Environment) var CameraEnvironment
 export (float, 0.01, 2.0) var SpringArmSphereRadius = 1
 export (float, 0.01, 10.0) var SpringArmSphereMargin = 1.0
 export (int) var FramesToWaitBeforeCollision = 5
+export (float) var SecondsToWaitForRotation = 2
 
 
 # Local variables
@@ -42,6 +43,8 @@ var spring_length : float = 0
 var clipping : bool = false
 var touching_wall : bool = false
 var target_y_rotation : float = 0
+var centering_camera : bool = false
+var angle : float = 0
 
 
 # Node reference variables
@@ -128,7 +131,12 @@ func _input(event):
 
 			# Handle sideways movement
 			cam_right = deg2rad(event.relative.x)
+			
+			# We moved this frame, so rotation happened
 			rotation_happened = true
+			
+			# Cancel centering the camera
+			centering_camera = false
 
 # Called every frame.
 func _process(delta):
@@ -144,8 +152,6 @@ func _process(delta):
 		
 	# Rotates the camera
 	_rotate_camera(delta)
-	
-	#_rotate_to_player()
 	
 	# Checks for occlusion/collision
 	_occlusion_check()
@@ -191,6 +197,10 @@ func _update_camera_position():
 	else:
 		# Instantly move the camera to match the follow target's position
 		self.global_transform.origin = follow_target.global_transform.origin
+		
+	# Check to see if the player has prompted recentering
+	if centering_camera:
+		_center_camera()
 
 # Checks the input of the camera
 func _check_input():
@@ -209,12 +219,17 @@ func _check_input():
 		Input.is_action_just_pressed(CameraInput.ZoomButton) and InputMethod == Mode.GAMEPAD) and 
 		not clipping):
 		_change_distance()
+		
+	# Recenter the camera
+	if (Input.is_action_just_pressed(CameraInput.CenterCameraKey) and InputMethod == Mode.MOUSE or 
+		Input.is_action_just_pressed(CameraInput.CenterCameraButton) and InputMethod == Mode.GAMEPAD):
+		centering_camera = true
 
 # Rotates the camera
 func _rotate_camera(delta):
 	if InputMethod == Mode.MOUSE:
 		if rotation_happened:
-			self.rotate_y(-cam_right * MouseSensitivity * delta)
+			rotate_y(-cam_right * MouseSensitivity * delta)
 			x_rotater.rotate_x(cam_up * MouseSensitivity * delta)
 			rotation_happened = false
 	elif InputMethod == Mode.GAMEPAD:
@@ -233,11 +248,12 @@ func _rotate_camera(delta):
 		# Rotation happened if our cam_stick_input vector length is not equal to zero
 		if cam_stick_input.length() != 0:
 			rotation_happened = true
+			centering_camera = false
 		else:
 			rotation_happened = false
 			
 		# Apply the rotation to the camera
-		self.rotate_y(cam_stick_input.x * GamepadSensitivity * delta)
+		rotate_y(cam_stick_input.x * GamepadSensitivity * delta)
 		x_rotater.rotate_x(cam_stick_input.y * GamepadSensitivity * delta)
 		
 	# Clamp the camera's rotation so that we can't infinitely rotate on the X axis
@@ -261,7 +277,7 @@ func _occlusion_check():
 	# We determine if the Camera is colliding by comparing the Target's Z value to the Camera's.
 	# If it's less than the Camera's, or the distance between the Camera and Target is very small AND
 	# the SpringArm itself is clipping, we know we are colliding with something.
-	if (tar_z < cam_z or abs(distance) < 0.1) and clipping:
+	if (tar_z < cam_z or abs(distance) < 0.045) and clipping:
 		
 		# We now want to ensure that the camera SHOULD be colliding against the found geometry.
 		# We don't want to collide while we're rotating the camera, UNLESS the detection spring
@@ -292,16 +308,24 @@ func _change_distance():
 		d = 0
 
 # Rotates the camera to face the same way as the follow target
-func _rotate_to_player():
+func _center_camera():
 	# Store the Target's y rotation
 	target_y_rotation = follow_target.rotation_degrees.y
 	
-	# Get the difference between Y angles and determine that we aren't touching a wall.
-	# If both conditions are met, we rotate the Camera to face behind the Target.
-	if (rotation_degrees.y - target_y_rotation) > 0.05 and not touching_wall:
-		rotate_y(-0.003)
-	elif (rotation_degrees.y - target_y_rotation) < -0.05 and not touching_wall:
-		rotate_y(0.003)
+	# Center the camera only if the rotation angle doesn't match the target's
+	if rotation_degrees.y != target_y_rotation:
+		angle = lerp(angle, 0.8, 0.01)
+		if rotation_degrees.y < target_y_rotation:
+			rotation_degrees.y += angle
+		elif rotation_degrees.y > target_y_rotation:
+			rotation_degrees.y -= angle
+
+	# Stop centering the camera and match the rotation exactly once we are close enough to
+	# the target's rotation
+	if is_equal_approx(stepify(rotation_degrees.y, 0.75), stepify(target_y_rotation, 0.75)):
+		angle = 0
+		rotation_degrees.y = target_y_rotation
+		centering_camera = false
 	
 # We use this function to apply the deadzone for gamepads
 func _apply_gamepad_deadzone(var input_vector, var deadzone):

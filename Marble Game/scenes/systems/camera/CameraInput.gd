@@ -77,3 +77,16 @@ func _create_input_mappings():
 		var event = InputEventKey.new()
 		event.scancode = KEY_C
 		InputMap.action_add_event("*zoom_keyboard*", event)
+		
+	# Recentering camera
+	if !InputMap.has_action("*center_camera_keyboard*"):
+		InputMap.add_action("*center_camera_keyboard*")
+		var event = InputEventKey.new()
+		event.scancode = KEY_V
+		InputMap.action_add_event("*center_camera_keyboard*", event)
+		
+	if !InputMap.has_action("*center_camera_button*"):
+		InputMap.add_action("*center_camera_button*")
+		var event = InputEventJoypadButton.new()
+		event.button_index = 5
+		InputMap.action_add_event("*center_camera_button*", event)

@@ -9,7 +9,7 @@ export (NodePath) var FollowTarget
 export (FollowMode) var CameraFollowMode = FollowMode.SMOOTH_INTERPOLATION
 export (float, 0.001, 0.1) var FollowSmoothSpeed = 0.08
 export (CollideMode) var CollisionResponse = CollideMode.INSTANT_FORWARD_SMOOTH_BACK
-export (float, 0.001, 0.1) var CollisionSmoothSpeed = 0.03
+export (float, 0.001, 0.1) var CollisionSmoothSpeed = 0.05
 export (float, 0, 2.0) var CameraCollisionOffset = 0.25
 export (Mode) var InputMethod = Mode.MOUSE
 export (Inputs) var InputsToUse = Inputs.GENERATE_FOR_ME
@@ -42,9 +42,10 @@ var hit_length : float = 0
 var spring_length : float = 0
 var clipping : bool = false
 var touching_wall : bool = false
-var target_y_rotation : float = 0
 var centering_camera : bool = false
+var detect_hit : bool = false
 var angle : float = 0
+var cam_distance : float = 0
 
 
 # Node reference variables
@@ -106,7 +107,8 @@ func _ready():
 	
 	# Ensure the target and camera are positioned properly
 	target.transform.origin.z = distances[0] - CameraCollisionOffset
-	camera.transform.origin.z = target.transform.origin.z
+	cam_distance = target.transform.origin.z
+	camera.transform.origin.z = cam_distance
 
 	# Ensure we don't inherit rotational data from the player
 	self.set_as_toplevel(true)
@@ -159,9 +161,15 @@ func _process(delta):
 
 # Updates the camera settings
 func _update_camera_settings():
+	# Update the springarm's length to match the current specified distance.
+	springarm.spring_length = distances[d]
+	
 	# Store the length of the springarm and its hit length
 	spring_length = springarm.spring_length
 	hit_length = springarm.get_hit_length()
+	
+	# Update the target's position so that it is always offset from the actual length of the springarm.
+	target.transform.origin.z = hit_length - CameraCollisionOffset
 	
 	# Update the wall detector's position to the follow target's, plus the specified offset.
 	wall_detector.global_transform.origin = follow_target.global_transform.origin + wall_detector_offset
@@ -169,12 +177,6 @@ func _update_camera_settings():
 	# Store the camera and target z positions for easier comparisons
 	cam_z = camera.transform.origin.z
 	tar_z = target.transform.origin.z
-	
-	# Update the springarm's length to match the current specified distance.
-	springarm.spring_length = distances[d]
-	
-	# Update the target's position so that it is always offset from the actual length of the springarm.
-	target.transform.origin.z = hit_length - CameraCollisionOffset
 	
 	# Count the number of frames since rotation last happened. This is done to ensure the camera doesn't clip to 
 	# geometry between itself and the player UNLESS there is geometry close enough to the camera, or the player has
@@ -271,32 +273,37 @@ func _occlusion_check():
 	else:
 		clipping = false
 	
-	# Store the distance between tar_z and cam_z.
-	var distance = cam_z - tar_z
-	
+	# We determine if something is behind the camera by comparing the hit length of the "detection spring"
+	# to its specified length. If it's shorter than the specified length, the camera hit something located 
+	# behind it, so let us know that the hit was detected.
+	if detection_spring.get_hit_length() < detection_spring.spring_length:
+		detect_hit = true
+	else:
+		detect_hit = false
+
 	# We determine if the Camera is colliding by comparing the Target's Z value to the Camera's.
-	# If it's less than the Camera's, or the distance between the Camera and Target is very small AND
-	# the SpringArm itself is clipping, we know we are colliding with something.
-	if (tar_z < cam_z or abs(distance) < 0.045) and clipping:
+	# If it's less than the Camera's, AND the SpringArm itself is clipping, we know we are 
+	# colliding with something.
+	if tar_z < cam_z and clipping:
 		
 		# We now want to ensure that the camera SHOULD be colliding against the found geometry.
 		# We don't want to collide while we're rotating the camera, UNLESS the detection spring
 		# finds geometry, or the player has stopped rotating the camera for the amount of frames
-		# that are specified to wait. When either is true, pull the Camera forward instantly.
-		if (frames >= FramesToWaitBeforeCollision or 
-			detection_spring.get_hit_length() < detection_spring.spring_length):
-				
-			camera.transform.origin.z = target.transform.origin.z
+		# that are specified to wait. When either is true, pull the Camera forward.
+		if frames >= FramesToWaitBeforeCollision or detect_hit:
+			cam_distance = lerp(cam_distance, tar_z, 0.4)
+
+
 	else:
 		# Determine the camera's update strategy
 		if CollisionResponse == CollideMode.INSTANT_FORWARD_SMOOTH_BACK:
-			# Smoothly lerp back to the starting position (great for adventure games).
-			camera.transform.origin.z = lerp(camera.transform.origin.z, 
-			target.transform.origin.z,
-			CollisionSmoothSpeed)
+			# Smoothly lerp back to the target's position (great for adventure games).
+			cam_distance = lerp(cam_distance, tar_z, CollisionSmoothSpeed)
 		else:
 			# Snap back instantly (great for action games like third-person shooters)
-			camera.transform.origin.z = target.transform.origin.z
+			cam_distance = tar_z
+	camera.transform.origin.z = cam_distance
+
 
 # Changes the current distance of the camera
 func _change_distance():
@@ -309,22 +316,20 @@ func _change_distance():
 
 # Rotates the camera to face the same way as the follow target
 func _center_camera():
-	# Store the Target's y rotation
-	target_y_rotation = follow_target.rotation_degrees.y
-	
+
 	# Center the camera only if the rotation angle doesn't match the target's
-	if rotation_degrees.y != target_y_rotation:
+	if rotation_degrees.y != follow_target.rotation_degrees.y:
 		angle = lerp(angle, 0.8, 0.01)
-		if rotation_degrees.y < target_y_rotation:
+		if rotation_degrees.y < follow_target.rotation_degrees.y:
 			rotation_degrees.y += angle
-		elif rotation_degrees.y > target_y_rotation:
+		elif rotation_degrees.y > follow_target.rotation_degrees.y:
 			rotation_degrees.y -= angle
 
 	# Stop centering the camera and match the rotation exactly once we are close enough to
 	# the target's rotation
-	if is_equal_approx(stepify(rotation_degrees.y, 0.75), stepify(target_y_rotation, 0.75)):
+	if is_equal_approx(stepify(rotation_degrees.y, 0.75), stepify(follow_target.rotation_degrees.y, 0.75)):
 		angle = 0
-		rotation_degrees.y = target_y_rotation
+		rotation_degrees.y = follow_target.rotation_degrees.y
 		centering_camera = false
 	
 # We use this function to apply the deadzone for gamepads
@@ -341,11 +346,9 @@ func _apply_gamepad_deadzone(var input_vector, var deadzone):
 func _on_WallDetector_body_entered(body):
 	if not body.is_in_group("exclude"):
 		touching_wall = true
-		print("Touching")
 
 # Lets us know when the player has stopped touching a wall.
 func _on_WallDetector_body_exited(body):
 	if not body.is_in_group("exclude"):
 		touching_wall = false
-		print("Not touching")
 

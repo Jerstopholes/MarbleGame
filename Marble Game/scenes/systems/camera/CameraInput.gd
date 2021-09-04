@@ -30,63 +30,63 @@ func _create_input_mappings():
 	
 	# first check for horizontal rotation, add it if it doesn't exist
 	# left
-	if !InputMap.has_action("*left*"):
-		InputMap.add_action("*left*", 0.5)
+	if !InputMap.has_action(LookLeft):
+		InputMap.add_action(LookLeft, 0.5)
 		var event = InputEventJoypadMotion.new()
 		event.axis = JOY_AXIS_2
 		event.axis_value = -1.0
-		InputMap.action_add_event("*left*", event)
+		InputMap.action_add_event(LookLeft, event)
 	
 	# right
-	if !InputMap.has_action("*right*"):
-		InputMap.add_action("*right*", 0.5)
+	if !InputMap.has_action(LookRight):
+		InputMap.add_action(LookRight, 0.5)
 		var event = InputEventJoypadMotion.new()
 		event.axis = JOY_AXIS_2
 		event.axis_value = 1.0
-		InputMap.action_add_event("*right*", event)
+		InputMap.action_add_event(LookRight, event)
 	
 	# now check for the vertical rotation, if it doesn't exist add it
 	# up
-	if !InputMap.has_action("*up*"):
-		InputMap.add_action("*up*", 0.5)
+	if !InputMap.has_action(LookUp):
+		InputMap.add_action(LookUp, 0.5)
 		var event = InputEventJoypadMotion.new()
 		event.axis = JOY_AXIS_3
 		event.axis_value = -1.0
-		InputMap.action_add_event("*up*", event)
+		InputMap.action_add_event(LookUp, event)
 	
 	# down
-	if !InputMap.has_action("*down*"):
-		InputMap.add_action("*down*", 0.5)
+	if !InputMap.has_action(LookDown):
+		InputMap.add_action(LookDown, 0.5)
 		var event = InputEventJoypadMotion.new()
 		event.axis = JOY_AXIS_3
 		event.axis_value = 1.0
-		InputMap.action_add_event("*down*", event)
+		InputMap.action_add_event(LookDown, event)
 	
 	
 	# now add zoom support
 	# controller
-	if !InputMap.has_action("*zoom_gamepad*"):
-		InputMap.add_action("*zoom_gamepad*", 0.5)
+	if !InputMap.has_action(ZoomButton):
+		InputMap.add_action(ZoomButton, 0.5)
 		var event = InputEventJoypadButton.new()
 		event.button_index = 10
-		InputMap.action_add_event("*zoom_gamepad*", event)
+		InputMap.action_add_event(ZoomButton, event)
 	
 	# mouse
-	if !InputMap.has_action("*zoom_keyboard*"):
-		InputMap.add_action("*zoom_keyboard*", 0.5)
+	if !InputMap.has_action(ZoomKey):
+		InputMap.add_action(ZoomKey, 0.5)
 		var event = InputEventKey.new()
 		event.scancode = KEY_C
-		InputMap.action_add_event("*zoom_keyboard*", event)
+		InputMap.action_add_event(ZoomKey, event)
 		
 	# Recentering camera
-	if !InputMap.has_action("*center_camera_keyboard*"):
-		InputMap.add_action("*center_camera_keyboard*")
+	if !InputMap.has_action(CenterCameraKey):
+		InputMap.add_action(CenterCameraKey)
 		var event = InputEventKey.new()
 		event.scancode = KEY_V
-		InputMap.action_add_event("*center_camera_keyboard*", event)
+		InputMap.action_add_event(CenterCameraKey, event)
 		
-	if !InputMap.has_action("*center_camera_button*"):
-		InputMap.add_action("*center_camera_button*")
+	if !InputMap.has_action(CenterCameraButton):
+		InputMap.add_action(CenterCameraButton)
 		var event = InputEventJoypadButton.new()
-		event.button_index = 5
-		InputMap.action_add_event("*center_camera_button*", event)
+		event.button_index = 9
+		InputMap.action_add_event(CenterCameraButton, event)

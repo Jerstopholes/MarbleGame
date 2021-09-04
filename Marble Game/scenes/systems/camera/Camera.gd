@@ -22,6 +22,7 @@ export (float, 0.01, 2.0) var SpringArmSphereRadius = 1
 export (float, 0.01, 10.0) var SpringArmSphereMargin = 1.0
 export (int) var FramesToWaitBeforeCollision = 5
 export (float) var SecondsToWaitForRotation = 2
+export (bool) var AllowSwitchToFirstPerson = true
 
 
 # Local variables
@@ -46,6 +47,9 @@ var centering_camera : bool = false
 var detect_hit : bool = false
 var angle : float = 0
 var cam_distance : float = 0
+var fade_out_done : bool = false
+var fade_in_done : bool = false
+var switch : bool = false
 
 
 # Node reference variables
@@ -54,9 +58,11 @@ onready var camera = $XRotater/Camera
 onready var springarm = $XRotater/SpringArm
 onready var target = $XRotater/SpringArm/Target
 onready var distance_markers = $DistanceMarkers
-onready var wall_detector = $XRotater/WallDetector
+onready var wall_detector = $WallDetector
 onready var CameraInput = $CameraInput
 onready var detection_spring = $XRotater/Camera/DetectionSpring
+onready var fp_cam = $XRotater/FirstPersonCamera/Camera
+onready var anim_player = $XRotater/FirstPersonCamera/AnimPlayer
 
 # Called when the node enters the scene tree for the first time.
 func _ready():
@@ -88,7 +94,7 @@ func _ready():
 		follow_target = get_node(FollowTarget)
 	else:
 		printerr("NO FOLLOW TARGET ASSIGNED!")
-		print_debug("Please make sure you assign a follow target.")
+		printerr("Please make sure you assign a follow target.")
 		# Force a crash
 		get_tree().quit()
 	
@@ -189,6 +195,22 @@ func _update_camera_settings():
 	else:
 		# Rotation has happened so reset the counter
 		frames = 0
+		
+	# Check to see if we are switching over to First Person Mode.
+	if switch:
+		# Flip which cameras are active
+		camera.current = !camera.current
+		fp_cam.current = !camera.current
+		
+		# Reset the rotation
+		rotation_degrees.y = follow_target.rotation_degrees.y
+		rotation_degrees.x = 0
+		
+		# Play the animation to hide this all
+		anim_player.play("FadingIn")
+		switch = false
+		
+
 
 # Updates the positioning of the camera
 func _update_camera_position():
@@ -307,12 +329,23 @@ func _occlusion_check():
 
 # Changes the current distance of the camera
 func _change_distance():
-	# Increase the value of d by 1
-	d += 1
+	# Check if we are in First Person Mode. If we are, we want to switch out of it.
+	if fp_cam.current:
+		switch = true
+	else:
+		d += 1
 	
-	# If we reach the end of the distances array, start back at the beginning.
-	if d >= distances.size():
+	# If we reach the end of the distances array, but allow switching to first-person mode, 
+	# start back at the beginning but also set switch to true.
+	if d == distances.size() and AllowSwitchToFirstPerson:
+		switch = true
 		d = 0
+		
+	# If we reach the end of the distances array, start back at the beginning.
+	elif d >= distances.size():
+		d = 0
+
+
 
 # Rotates the camera to face the same way as the follow target
 func _center_camera():
@@ -351,4 +384,6 @@ func _on_WallDetector_body_entered(body):
 func _on_WallDetector_body_exited(body):
 	if not body.is_in_group("exclude"):
 		touching_wall = false
+
+
 

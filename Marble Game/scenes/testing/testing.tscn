@@ -1,5 +1,6 @@
-[gd_scene load_steps=13 format=2]
+[gd_scene load_steps=14 format=2]
 
+[ext_resource path="res://piiink.tres" type="Environment" id=1]
 [ext_resource path="res://scenes/systems/camera/Camera.tscn" type="PackedScene" id=2]
 [ext_resource path="res://scenes/testing/testing.gd" type="Script" id=3]
 
@@ -56,10 +57,8 @@ script = ExtResource( 3 )
 transform = Transform( -4.37114e-08, 0, 1, 0, 1, 0, -1, 0, -4.37114e-08, 1, 0, -4.37114e-08 )
 FollowTarget = NodePath("../TestSphere")
 CameraCollisionOffset = 1.0
+CameraEnvironment = ExtResource( 1 )
 SpringArmSphereMargin = 10.0
-
-[node name="WallDetector" parent="Camera/XRotater" index="0"]
-transform = Transform( 1, 0, 0, 0, 1, 0, 0, 0, 1, 2, 0, -1 )
 
 [node name="DetectionSpring" parent="Camera/XRotater/Camera" index="0"]
 spring_length = 3.0

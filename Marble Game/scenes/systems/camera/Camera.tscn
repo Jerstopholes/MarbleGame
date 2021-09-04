@@ -1,8 +1,9 @@
-[gd_scene load_steps=9 format=2]
+[gd_scene load_steps=14 format=2]
 
 [ext_resource path="res://scenes/systems/camera/Camera.gd" type="Script" id=1]
 [ext_resource path="res://scenes/systems/camera/CameraInput.gd" type="Script" id=2]
 [ext_resource path="res://scenes/systems/camera/3DDistanceMarker.tscn" type="PackedScene" id=3]
+[ext_resource path="res://scenes/systems/camera/animations/FadingIn.tres" type="Animation" id=6]
 
 [sub_resource type="CapsuleShape" id=1]
 height = 1.61749
@@ -21,13 +22,81 @@ emission_energy = 1.0
 emission_operator = 0
 emission_on_uv2 = false
 
+[sub_resource type="Animation" id=7]
+resource_name = "FadeOut"
+tracks/0/type = "value"
+tracks/0/path = NodePath("Black:color")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/keys = {
+"times": PoolRealArray( 0, 0.5, 1 ),
+"transitions": PoolRealArray( 1, 0.5, 1 ),
+"update": 0,
+"values": [ Color( 0, 0, 0, 1 ), Color( 0, 0, 0, 1 ), Color( 0, 0, 0, 0 ) ]
+}
+
+[sub_resource type="Animation" id=6]
+resource_name = "FadeOut (copy)"
+tracks/0/type = "value"
+tracks/0/path = NodePath("Black:color")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/keys = {
+"times": PoolRealArray( 0, 0.5, 1 ),
+"transitions": PoolRealArray( 1, 0.5, 1 ),
+"update": 0,
+"values": [ Color( 0, 0, 0, 0 ), Color( 0, 0, 0, 0 ), Color( 0, 0, 0, 1 ) ]
+}
+
+[sub_resource type="Animation" id=9]
+resource_name = "FadingOut"
+length = 0.35
+tracks/0/type = "value"
+tracks/0/path = NodePath("Black:color")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/keys = {
+"times": PoolRealArray( 0, 0.3 ),
+"transitions": PoolRealArray( 1, 1 ),
+"update": 0,
+"values": [ Color( 0, 0, 0, 0 ), Color( 0, 0, 0, 1 ) ]
+}
+
+[sub_resource type="Animation" id=8]
+resource_name = "Transition"
+tracks/0/type = "value"
+tracks/0/path = NodePath("Black:color")
+tracks/0/interp = 1
+tracks/0/loop_wrap = true
+tracks/0/imported = false
+tracks/0/enabled = true
+tracks/0/keys = {
+"times": PoolRealArray( -0.1, 0.3, 0.6, 1 ),
+"transitions": PoolRealArray( 1, 1, 1, 0.5 ),
+"update": 0,
+"values": [ Color( 0, 0, 0, 0 ), Color( 0, 0, 0, 1 ), Color( 0, 0, 0, 1 ), Color( 0, 0, 0, 0 ) ]
+}
+
 [node name="Camera" type="Spatial"]
 script = ExtResource( 1 )
 
 [node name="CameraInput" type="Node" parent="."]
 script = ExtResource( 2 )
+__meta__ = {
+"_editor_description_": "Use the default inputs, or specify your own by overriding the variables exported here. 
+"
+}
 
 [node name="DistanceMarkers" type="Spatial" parent="."]
+__meta__ = {
+"_editor_description_": "These markers are used to visually adjust the different distances you want the camera to be able to use."
+}
 
 [node name="1" parent="DistanceMarkers" instance=ExtResource( 3 )]
 transform = Transform( 0.5, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 0, 0, 2 )
@@ -38,15 +107,18 @@ transform = Transform( 0.5, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 0, 0, 5 )
 [node name="3" parent="DistanceMarkers" instance=ExtResource( 3 )]
 transform = Transform( 0.5, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 0, 0, 8 )
 
-[node name="XRotater" type="Spatial" parent="."]
+[node name="WallDetector" type="Area" parent="."]
+__meta__ = {
+"_editor_description_": "This Area is used to determine if the player is stuck on a wall. This is so we can stop the camera from automatically rotating to match the player's rotation."
+}
 
-[node name="WallDetector" type="Area" parent="XRotater"]
-
-[node name="WallDetectorShape" type="CollisionShape" parent="XRotater/WallDetector" groups=[
+[node name="WallDetectorShape" type="CollisionShape" parent="WallDetector" groups=[
 "noclip",
 ]]
 transform = Transform( 1, 0, 0, 0, -4.37114e-08, -1, 0, 1, -4.37114e-08, 0, 0, 0 )
 shape = SubResource( 1 )
+
+[node name="XRotater" type="Spatial" parent="."]
 
 [node name="Camera" type="Camera" parent="XRotater"]
 current = true
@@ -66,5 +138,30 @@ transform = Transform( 0.3, 0, 0, 0, 0.3, 0, 0, 0, 0.3, 0, 0, 0 )
 mesh = SubResource( 4 )
 material/0 = SubResource( 5 )
 
-[connection signal="body_entered" from="XRotater/WallDetector" to="." method="_on_WallDetector_body_entered"]
-[connection signal="body_exited" from="XRotater/WallDetector" to="." method="_on_WallDetector_body_exited"]
+[node name="FirstPersonCamera" type="Spatial" parent="XRotater"]
+transform = Transform( 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 2, 0 )
+
+[node name="Camera" type="Camera" parent="XRotater/FirstPersonCamera"]
+far = 1500.0
+
+[node name="AnimPlayer" type="AnimationPlayer" parent="XRotater/FirstPersonCamera"]
+anims/FadeOut = SubResource( 7 )
+"anims/FadeOut (copy)" = SubResource( 6 )
+anims/FadingIn = ExtResource( 6 )
+anims/FadingOut = SubResource( 9 )
+anims/Transition = SubResource( 8 )
+
+[node name="Black" type="ColorRect" parent="XRotater/FirstPersonCamera"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 2
+size_flags_vertical = 2
+color = Color( 0, 0, 0, 0 )
+__meta__ = {
+"_edit_use_anchors_": false
+}
+
+[connection signal="body_entered" from="WallDetector" to="." method="_on_WallDetector_body_entered"]
+[connection signal="body_exited" from="WallDetector" to="." method="_on_WallDetector_body_exited"]

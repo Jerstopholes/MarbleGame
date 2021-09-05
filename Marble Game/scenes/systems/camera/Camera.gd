@@ -1,369 +1,403 @@
 extends Spatial
 
-# These enums help us out in the editor.
-enum Mode { MOUSE, GAMEPAD }
-enum CollideMode { INSTANT_FORWARD_SMOOTH_BACK, INSTANT_FORWARD_AND_BACK }
-enum FollowMode { SMOOTH_INTERPOLATION, INSTANT }
-enum Inputs { GENERATE_FOR_ME, SPECIFY_MY_OWN }
-export (NodePath) var FollowTarget
-export (FollowMode) var CameraFollowMode = FollowMode.SMOOTH_INTERPOLATION
-export (float, 0.001, 0.1) var FollowSmoothSpeed = 0.08
-export (CollideMode) var CollisionResponse = CollideMode.INSTANT_FORWARD_SMOOTH_BACK
+# We use these enums to set certain parameters in the editor more easily. 
+# They specifiy which input devices to use by default, how we want the _camera
+# to interact with the world, how we should follow the player, and whether
+# or not we want to use the default input mappings or specify our own.
+enum mode { MOUSE, GAMEPAD }
+enum collide_mode { INSTANT_FORWARD_SMOOTH_BACK, INSTANT_FORWARD_AND_BACK }
+enum follow_mode { SMOOTH_INTERPOLATION, INSTANT }
+enum inputs { GENERATE_FOR_ME, SPECIFY_MY_OWN }
+
+# These exported properties are used to set adjustable parameters, such as the player
+# to follow, smoothing speeds, collision responses, input sensitivites, the FOV for the _camera(s), 
+# environment to use on the _camera(s), how many _frames to count before collision, and whether the 
+# player can switch to first-person mode.
+export (NodePath) var player
+export (follow_mode) var camera_follow_mode = follow_mode.SMOOTH_INTERPOLATION
+export (float, 0.001, 0.1) var follow_smooth_speed = 0.08
+export (collide_mode) var collision_response = collide_mode.INSTANT_FORWARD_SMOOTH_BACK
 export (float, 0.001, 0.1) var CollisionSmoothSpeed = 0.05
-export (float, 0, 2.0) var CameraCollisionOffset = 0.25
-export (Mode) var InputMethod = Mode.MOUSE
-export (Inputs) var InputsToUse = Inputs.GENERATE_FOR_ME
-export (float) var MouseSensitivity = 10.0
-export (float) var GamepadSensitivity = 2.75
-export (float, 0.01, 0.5) var GamepadDeadzone = 0.25
-export (float, 0.01, 179) var CameraFOV = 70.0
-export (Environment) var CameraEnvironment
-export (float, 0.01, 2.0) var SpringArmSphereRadius = 1
-export (float, 0.01, 10.0) var SpringArmSphereMargin = 1.0
-export (int) var FramesToWaitBeforeCollision = 5
-export (float) var SecondsToWaitForRotation = 2
-export (bool) var AllowSwitchToFirstPerson = true
+export (float, 0, 2.0) var camera_collision_offset = 0.25
+export (mode) var input_method = mode.MOUSE
+export (inputs) var inputs_to_use = inputs.GENERATE_FOR_ME
+export (float) var mouse_sensitivity = 10.0
+export (float) var gamepad_sensitivity = 2.75
+export (float, 0.01, 0.5) var gamepad_deadzone = 0.25
+export (float, 0.01, 179) var camera_fov = 70.0
+export (Environment) var environment
+export (float, 0.01, 2.0) var springarm_sphere_radius = 1.0
+export (float, 0.01, 10.0) var springarm_sphere_margin = 1.0
+export (int) var frames_to_wait_before_collision = 5
+export (bool) var enable_first_person = true
 
 
-# Local variables
-var cam_z : float = 0
-var tar_z : float = 0
-var cam_up : float = 0
-var cam_right : float = 0
-var cam_stick_input : Vector2
-var rotation_happened : bool = false
-var mouse_captured : bool = false
-var follow_target : Node
-var d : int = 0
-var distances : Array
-var frames : int = 0
-var wall_detector_offset : Vector3
-var camera_offset : Vector3
-var hit_length : float = 0
-var spring_length : float = 0
-var clipping : bool = false
-var touching_wall : bool = false
-var centering_camera : bool = false
-var detect_hit : bool = false
-var angle : float = 0
-var cam_distance : float = 0
-var fade_out_done : bool = false
-var fade_in_done : bool = false
-var switch : bool = false
+# Private helper variables.
+
+# Stores the _camera's z value and the z value of the _target.
+var _cam_z : float = 0.0
+var _tar_z : float = 0.0
+
+# Used to determine _camera movement input.
+var _cam_up : float = 0.0
+var _cam_right : float = 0.0
+var _cam_stick : Vector2
+
+# Lets us know whether or not rotation occured on this frame.
+var _rotation : bool = false
+
+# Determines if the mouse is captured
+var _is_mouse_captured : bool = false
+
+# Stores and accesses the different values for the _camera's available distances and tracks
+# what the current _camera distance is.
+var _distance_array : Array
+var _distance_index : int = 0
+var _camera_distance : float = 0
+
+# Offsets for the wall detector and the _camera.
+var _wall_detector_offset : Vector3
+var _camera_offset : Vector3
+
+# Used to determine what the SpringArm length should be, what the hit length of the SpringArm is, 
+# and whether or not the SpringArm is actually hitting something.
+var _hit_length : float = 0
+var _spring_length : float = 0
+var _springarm_is_hitting : bool = false
+
+# Lets us know if the player is stuck on a wall, and whether or not the _camera is detecting a hit behind itself
+# using the detection SpringArm on its back end.
+var _is_touching_wall : bool = false
+var _hit_from_behind : bool = false
+var _angle : float = 0
+
+# Swithing and centering _camera tasks.
+var _centering_camera : bool = false
+var _is_switching_camera : bool = false
+
+# The stored player
+var _player : Node
+
+# The amount of frames that have elapsed since the player last provided _camera input.
+# Used to allow collisions when the player has stopped rotating the _camera but there's still an 
+# object obscuring the player. 
+var _frames : int = 0
 
 
-# Node reference variables
-onready var x_rotater = $XRotater
-onready var camera = $XRotater/Camera
-onready var springarm = $XRotater/SpringArm
-onready var target = $XRotater/SpringArm/Target
-onready var distance_markers = $DistanceMarkers
-onready var wall_detector = $WallDetector
-onready var CameraInput = $CameraInput
-onready var detection_spring = $XRotater/Camera/DetectionSpring
-onready var fp_cam = $XRotater/FirstPersonCamera/Camera
-onready var anim_player = $XRotater/FirstPersonCamera/AnimPlayer
+# Node reference variables.
+onready var _x_axis = $XRotater
+onready var _camera = $XRotater/Camera
+onready var _springarm = $XRotater/SpringArm
+onready var _target = $XRotater/SpringArm/Target
+onready var _distance_markers = $DistanceMarkers
+onready var _wall_detector = $WallDetector
+onready var _cam_input = $CameraInput
+onready var _detection_springarm = $XRotater/Camera/DetectionSpring
+onready var _fp_cam = $XRotater/FirstPersonCamera/Camera
+onready var _anim_player = $XRotater/FirstPersonCamera/AnimPlayer
+
 
 # Called when the node enters the scene tree for the first time.
 func _ready():
 	# Determine the Camera's input mode.
-	if InputMethod == Mode.MOUSE:
+	if input_method == mode.MOUSE:
 		Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
-		mouse_captured = true
-	elif InputMethod == Mode.GAMEPAD:
+		_is_mouse_captured = true
+	elif input_method == mode.GAMEPAD:
 		# The cursor isn't captured but we also don't want to show it until the player wants it shown
 		Input.set_mouse_mode(Input.MOUSE_MODE_HIDDEN)
-		mouse_captured = false
+		_is_mouse_captured = false
 		
-	# Get the distance marker's Z values to add to our distances array
-	for i in range(distance_markers.get_child_count()):
-		distances.append(distance_markers.get_child(i).transform.origin.z)
+	# Get the distance marker's Z values to add to our _distance_array array
+	for i in range(_distance_markers.get_child_count()):
+		_distance_array.append(_distance_markers.get_child(i).transform.origin.z)
 		
 		# Hide the markers
-		distance_markers.get_child(i).hide()
+		_distance_markers.get_child(i).hide()
 		
 	# Variable to store what distance we are currently set to
-	d = 0
+	_distance_index = 0
 	
-	# Assign the other camera properties
-	camera.environment = CameraEnvironment
-	camera.fov = CameraFOV
+	# Assign the other _camera properties
+	_camera.environment = environment
+	_camera.fov = camera_fov
 	
-	# Assign the follow target
-	if FollowTarget:
-		follow_target = get_node(FollowTarget)
+	# Assign the player to _player
+	if player:
+		_player = get_node(player)
 	else:
-		printerr("NO FOLLOW TARGET ASSIGNED!")
-		printerr("Please make sure you assign a follow target.")
+		# Tell the user what went wrong
+		printerr("NO PLAYER ASSIGNED!")
+		printerr("Please make sure you assign a player for the _camera to follow.")
 		# Force a crash
 		get_tree().quit()
 	
 	# Assign the SpringArm properties
-	springarm.spring_length = distances[0] 
-	springarm.shape.set_radius(SpringArmSphereRadius)
-	springarm.shape.set_margin(SpringArmSphereMargin)
+	_springarm.spring_length = _distance_array[0] 
+	_springarm.shape.set_radius(springarm_sphere_radius)
+	_springarm.shape.set_margin(springarm_sphere_margin)
 	
 	# Add these nodes to be excluded by the spring arm to prevent false positive collisions
-	springarm.add_excluded_object(wall_detector)
-	springarm.add_excluded_object(follow_target)
+	_springarm.add_excluded_object(_wall_detector)
+	_springarm.add_excluded_object(_player)
 	
-	# Do the same for the detection spring on the camera
-	detection_spring.add_excluded_object(wall_detector)
-	detection_spring.add_excluded_object(follow_target)
+	# Do the same for the detection spring on the _camera
+	_detection_springarm.add_excluded_object(_wall_detector)
+	_detection_springarm.add_excluded_object(_player)
 	
-	# Ensure the target and camera are positioned properly
-	target.transform.origin.z = distances[0] - CameraCollisionOffset
-	cam_distance = target.transform.origin.z
-	camera.transform.origin.z = cam_distance
+	# Ensure the _target and _camera are positioned properly
+	_target.transform.origin.z = _distance_array[0] - camera_collision_offset
+	_camera_distance = _target.transform.origin.z
+	_camera.transform.origin.z = _camera_distance
 
 	# Ensure we don't inherit rotational data from the player
 	self.set_as_toplevel(true)
-	wall_detector.set_as_toplevel(true)
+	_wall_detector.set_as_toplevel(true)
 	
-	# Store the offset of the wall detector to the follow target
-	wall_detector_offset = wall_detector.global_transform.origin - follow_target.global_transform.origin
+	# Store the offset of the wall detector to the player node
+	_wall_detector_offset = _wall_detector.global_transform.origin - _player.global_transform.origin
 	
-	# Store the offset of the camera and follow target
-	camera_offset = self.global_transform.origin - follow_target.global_transform.origin
+	# Store the offset of the _camera and player node
+	_camera_offset = self.global_transform.origin - _player.global_transform.origin
 	
-	# Hide the target visual aid
-	target.hide()
+	# Hide the _target visual aid
+	_target.hide()
 
 # Allows mouse input
 func _input(event):
-	if InputMethod == Mode.MOUSE:
-		if event is InputEventMouseMotion and mouse_captured:
+	if input_method == mode.MOUSE:
+		if event is InputEventMouseMotion and _is_mouse_captured:
 		
-			# Handle upwards movement
-			cam_up = deg2rad(event.relative.y * -1)
+			# Store the upwards movement
+			_cam_up = deg2rad(event.relative.y * -1)
 
-			# Handle sideways movement
-			cam_right = deg2rad(event.relative.x)
+			# Store the sideways movement
+			_cam_right = deg2rad(event.relative.x)
 			
-			# We moved this frame, so rotation happened
-			rotation_happened = true
+			# We moved this frame, so set _rotation to true
+			_rotation = true
 			
-			# Cancel centering the camera
-			centering_camera = false
+			# Cancel centering the _camera if needed
+			_centering_camera = false
 
 # Called every frame.
 func _process(delta):
 	
-	# Updates the basic camera settings
+	# Updates the basic _camera settings
 	_update_camera_settings()
 	
-	# Updates the positioning of the camera
+	# Updates the positioning of the _camera
 	_update_camera_position()
 	
-	# Checks for camera input
+	# Checks for _camera input
 	_check_input()
 		
-	# Rotates the camera
+	# Rotates the _camera
 	_rotate_camera(delta)
 	
 	# Checks for occlusion/collision
 	_occlusion_check()
 	
 
-# Updates the camera settings
+# Updates the _camera settings
 func _update_camera_settings():
-	# Update the springarm's length to match the current specified distance.
-	springarm.spring_length = distances[d]
+	# Update the _springarm's length to match the current specified distance.
+	_springarm.spring_length = _distance_array[_distance_index]
 	
-	# Store the length of the springarm and its hit length
-	spring_length = springarm.spring_length
-	hit_length = springarm.get_hit_length()
+	# Store the length of the _springarm and its hit length
+	_spring_length = _springarm.spring_length
+	_hit_length = _springarm.get_hit_length()
 	
-	# Update the target's position so that it is always offset from the actual length of the springarm.
-	target.transform.origin.z = hit_length - CameraCollisionOffset
+	# Update the _target's position so that it is always offset from the actual length of the _springarm.
+	_target.transform.origin.z = _hit_length - camera_collision_offset
 	
-	# Update the wall detector's position to the follow target's, plus the specified offset.
-	wall_detector.global_transform.origin = follow_target.global_transform.origin + wall_detector_offset
+	# Update the wall detector's position to the player node's, plus the specified offset.
+	_wall_detector.global_transform.origin = _player.global_transform.origin + _wall_detector_offset
 
-	# Store the camera and target z positions for easier comparisons
-	cam_z = camera.transform.origin.z
-	tar_z = target.transform.origin.z
+	# Store the _camera and _target z positions for easier comparisons
+	_cam_z = _camera.transform.origin.z
+	_tar_z = _target.transform.origin.z
 	
-	# Count the number of frames since rotation last happened. This is done to ensure the camera doesn't clip to 
-	# geometry between itself and the player UNLESS there is geometry close enough to the camera, or the player has
-	# stopped moving the camera. 
-	if not rotation_happened:
-		if frames >= FramesToWaitBeforeCollision:
-			frames = FramesToWaitBeforeCollision
+	# Count the number of _frames since rotation last happened. This is done to ensure the _camera doesn't clip to 
+	# geometry between itself and the player UNLESS there is geometry close enough to the _camera, or the player has
+	# stopped moving the _camera. 
+	if not _rotation:
+		if _frames >= frames_to_wait_before_collision:
+			_frames = frames_to_wait_before_collision
 		else:
-			frames += 1
+			_frames += 1
 	else:
 		# Rotation has happened so reset the counter
-		frames = 0
+		_frames = 0
 		
-	# Check to see if we are switching over to First Person Mode.
-	if switch:
+	# Check to see if we are switching cameras.
+	if _is_switching_camera:
 		# Flip which cameras are active
-		camera.current = !camera.current
-		fp_cam.current = !camera.current
+		_camera.current = !_camera.current
+		_fp_cam.current = !_camera.current
 		
-		# Reset the rotation
-		rotation_degrees.y = follow_target.rotation_degrees.y
-		rotation_degrees.x = 0
-		
-		# Play the animation to hide this all
-		anim_player.play("FadingIn")
-		switch = false
-		
+		# Play the fading in animation and set _is_switching_camera to false
+		_anim_player.play("FadingIn")
+		_is_switching_camera = false
 
-
-# Updates the positioning of the camera
+# Updates the positioning of the _camera
 func _update_camera_position():
-	# Determine the follow mode of the camera
-	if CameraFollowMode == FollowMode.SMOOTH_INTERPOLATION:
-		# Smoothly lerp the position of the camera to the follow target
-		self.global_transform.origin = lerp(self.global_transform.origin, follow_target.global_transform.origin + camera_offset, 0.08)
+	# Determine the follow mode of the _camera
+	if camera_follow_mode == follow_mode.SMOOTH_INTERPOLATION:
+		# Smoothly lerp the position of the _camera to the player node
+		global_transform.origin = lerp(global_transform.origin, _player.global_transform.origin + _camera_offset, 0.08)
 	else:
-		# Instantly move the camera to match the follow target's position
-		self.global_transform.origin = follow_target.global_transform.origin
+		# Instantly move the _camera to match the player node's position
+		global_transform.origin = _player.global_transform.origin
 		
 	# Check to see if the player has prompted recentering
-	if centering_camera:
+	if _centering_camera:
 		_center_camera()
 
-# Checks the input of the camera
+# Checks the input of the _camera
 func _check_input():
 	# Allow/disallow mouse input
 	if Input.is_action_just_pressed("ui_cancel"):
-		mouse_captured = not mouse_captured
-		if mouse_captured:
+		_is_mouse_captured = not _is_mouse_captured
+		if _is_mouse_captured:
 			Input.set_mouse_mode(Input.MOUSE_MODE_CAPTURED)
-			InputMethod = Mode.MOUSE
+			input_method = mode.MOUSE
 		else:
 			Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
-			InputMethod = Mode.GAMEPAD
+			input_method = mode.GAMEPAD
 
-	# Change the distance of the camera
-	if ((Input.is_action_just_pressed(CameraInput.ZoomKey) and InputMethod == Mode.MOUSE or 
-		Input.is_action_just_pressed(CameraInput.ZoomButton) and InputMethod == Mode.GAMEPAD) and 
-		not clipping):
+	# Change the distance of the _camera
+	if ((Input.is_action_just_pressed(_cam_input.zoom_key) and input_method == mode.MOUSE or 
+			Input.is_action_just_pressed(_cam_input.zoom_button) and input_method == mode.GAMEPAD) and
+			not _springarm_is_hitting):
+				
+		# Change the current distance of the _camera
 		_change_distance()
 		
-	# Recenter the camera
-	if (Input.is_action_just_pressed(CameraInput.CenterCameraKey) and InputMethod == Mode.MOUSE or 
-		Input.is_action_just_pressed(CameraInput.CenterCameraButton) and InputMethod == Mode.GAMEPAD):
-		centering_camera = true
+	# Recenter the _camera
+	if ((Input.is_action_just_pressed(_cam_input.center_camera_key) and input_method == mode.MOUSE or 
+			Input.is_action_just_pressed(_cam_input.center_camera_button) and input_method == mode.GAMEPAD) and
+			not _fp_cam.current):
+				
+		# Allow centering of the _camera
+		_centering_camera = true
 
-# Rotates the camera
+# Rotates the _camera
 func _rotate_camera(delta):
-	if InputMethod == Mode.MOUSE:
-		if rotation_happened:
-			rotate_y(-cam_right * MouseSensitivity * delta)
-			x_rotater.rotate_x(cam_up * MouseSensitivity * delta)
-			rotation_happened = false
-	elif InputMethod == Mode.GAMEPAD:
+	if input_method == mode.MOUSE:
+		if _rotation:
+			rotate_y(-_cam_right * mouse_sensitivity * delta)
+			_x_axis.rotate_x(_cam_up * mouse_sensitivity * delta)
+			_rotation = false
+	elif input_method == mode.GAMEPAD:
 		# Store the right movement
-		cam_right = Input.get_action_strength(CameraInput.LookLeft) - Input.get_action_strength(CameraInput.LookRight)
+		_cam_right = Input.get_action_strength(_cam_input.look_left) - Input.get_action_strength(_cam_input.look_right)
 		
 		# Store the up movement
-		cam_up = Input.get_action_strength(CameraInput.LookUp) - Input.get_action_strength(CameraInput.LookDown)
+		_cam_up = Input.get_action_strength(_cam_input.look_up) - Input.get_action_strength(_cam_input.look_down)
 		
 		# Create an input vector containing the input information
-		cam_stick_input = Vector2(cam_right, cam_up)
+		_cam_stick = Vector2(_cam_right, _cam_up)
 		
 		# Apply the deadzone
-		cam_stick_input = _apply_gamepad_deadzone(cam_stick_input, 0.25)
+		_cam_stick = _apply_gamepad_deadzone(_cam_stick, 0.25)
 		
-		# Rotation happened if our cam_stick_input vector length is not equal to zero
-		if cam_stick_input.length() != 0:
-			rotation_happened = true
-			centering_camera = false
+		# Rotation happened if our _cam_stick vector length is not equal to zero
+		if _cam_stick.length() != 0:
+			_rotation = true
+			_centering_camera = false
 		else:
-			rotation_happened = false
+			_rotation = false
 			
-		# Apply the rotation to the camera
-		rotate_y(cam_stick_input.x * GamepadSensitivity * delta)
-		x_rotater.rotate_x(cam_stick_input.y * GamepadSensitivity * delta)
+		# Apply the rotation to the _camera
+		rotate_y(_cam_stick.x * gamepad_sensitivity * delta)
+		_x_axis.rotate_x(_cam_stick.y * gamepad_sensitivity * delta)
 		
-	# Clamp the camera's rotation so that we can't infinitely rotate on the X axis
-	var x_rotation = x_rotater.rotation_degrees
+	# Clamp the _camera's rotation so that we can't infinitely rotate on the X axis
+	var x_rotation = _x_axis.rotation_degrees
 	x_rotation.x = clamp(x_rotation.x, -70, 70)
-	x_rotater.rotation_degrees = x_rotation
+	_x_axis.rotation_degrees = x_rotation
 
-# Checks for occlusion
+# Checks for collisions and occlusions
 func _occlusion_check():
 	
-	# Lets us know if the camera should be colliding with geometry by comparing the hit length 
+	# Lets us know if the _camera should be colliding with geometry by comparing the hit length 
 	# of the spring arm to its current specified length.
-	if hit_length < spring_length:
-		clipping = true
+	if _hit_length < _spring_length:
+		_springarm_is_hitting = true
 	else:
-		clipping = false
+		_springarm_is_hitting = false
 	
-	# We determine if something is behind the camera by comparing the hit length of the "detection spring"
-	# to its specified length. If it's shorter than the specified length, the camera hit something located 
+	# We determine if something is behind the _camera by comparing the hit length of the "detection spring"
+	# to its specified length. If it's shorter than the specified length, the _camera hit something located 
 	# behind it, so let us know that the hit was detected.
-	if detection_spring.get_hit_length() < detection_spring.spring_length:
-		detect_hit = true
+	if _detection_springarm.get_hit_length() < _detection_springarm.spring_length:
+		_hit_from_behind = true
 	else:
-		detect_hit = false
+		_hit_from_behind = false
 
 	# We determine if the Camera is colliding by comparing the Target's Z value to the Camera's.
-	# If it's less than the Camera's, AND the SpringArm itself is clipping, we know we are 
+	# If it's less than the Camera's, AND the SpringArm itself is _springarm_is_hitting, we know we are 
 	# colliding with something.
-	if tar_z < cam_z and clipping:
+	if _tar_z < _cam_z and _springarm_is_hitting:
 		
-		# We now want to ensure that the camera SHOULD be colliding against the found geometry.
-		# We don't want to collide while we're rotating the camera, UNLESS the detection spring
-		# finds geometry, or the player has stopped rotating the camera for the amount of frames
+		# We now want to ensure that the _camera SHOULD be colliding against the found geometry.
+		# We don't want to collide while we're rotating the _camera, UNLESS the detection spring
+		# finds geometry, or the player has stopped rotating the _camera for the amount of _frames
 		# that are specified to wait. When either is true, pull the Camera forward.
-		if frames >= FramesToWaitBeforeCollision or detect_hit:
-			cam_distance = lerp(cam_distance, tar_z, 0.4)
+		if _frames >= frames_to_wait_before_collision or _hit_from_behind:
+			_camera_distance = lerp(_camera_distance, _tar_z, 0.4)
 
 
 	else:
-		# Determine the camera's update strategy
-		if CollisionResponse == CollideMode.INSTANT_FORWARD_SMOOTH_BACK:
-			# Smoothly lerp back to the target's position (great for adventure games).
-			cam_distance = lerp(cam_distance, tar_z, CollisionSmoothSpeed)
+		# Determine the _camera's update strategy
+		if collision_response == collide_mode.INSTANT_FORWARD_SMOOTH_BACK:
+			# Smoothly lerp back to the _target's position (great for adventure games).
+			_camera_distance = lerp(_camera_distance, _tar_z, CollisionSmoothSpeed)
 		else:
 			# Snap back instantly (great for action games like third-person shooters)
-			cam_distance = tar_z
-	camera.transform.origin.z = cam_distance
+			_camera_distance = _tar_z
+	_camera.transform.origin.z = _camera_distance
 
 
-# Changes the current distance of the camera
+# Changes the current distance of the _camera
 func _change_distance():
-	# Check if we are in First Person Mode. If we are, we want to switch out of it.
-	if fp_cam.current:
-		switch = true
+	# Check if we are in First Person mode. If we are, we want to switch out of it before increasing the 
+	# distance of the _camera!
+	if _fp_cam.current:
+		_is_switching_camera = true
 	else:
-		d += 1
+		_distance_index += 1
 	
-	# If we reach the end of the distances array, but allow switching to first-person mode, 
-	# start back at the beginning but also set switch to true.
-	if d == distances.size() and AllowSwitchToFirstPerson:
-		switch = true
-		d = 0
+	# If we reach the end of _distance_array, but allow switching to first-person mode, 
+	# start back at the beginning of _distance_array but also set _is_switching_camera to true.
+	if _distance_index == _distance_array.size() and enable_first_person:
+		_is_switching_camera = true
+		_distance_index = 0
 		
-	# If we reach the end of the distances array, start back at the beginning.
-	elif d >= distances.size():
-		d = 0
+	# If we reach the end of the _distance_array, start back at the beginning.
+	elif _distance_index >= _distance_array.size():
+		_distance_index = 0
 
 
 
-# Rotates the camera to face the same way as the follow target
+# Rotates the _camera to face the same way as the player node
 func _center_camera():
 
-	# Center the camera only if the rotation angle doesn't match the target's
-	if rotation_degrees.y != follow_target.rotation_degrees.y:
-		angle = lerp(angle, 0.8, 0.01)
-		if rotation_degrees.y < follow_target.rotation_degrees.y:
-			rotation_degrees.y += angle
-		elif rotation_degrees.y > follow_target.rotation_degrees.y:
-			rotation_degrees.y -= angle
+	# Center the _camera only if the rotation _angle doesn't match the _target's
+	if rotation_degrees.y != _player.rotation_degrees.y:
+		_angle = lerp(_angle, 0.8, 0.01)
+		if rotation_degrees.y < _player.rotation_degrees.y:
+			rotation_degrees.y += _angle
+		elif rotation_degrees.y > _player.rotation_degrees.y:
+			rotation_degrees.y -= _angle
 
-	# Stop centering the camera and match the rotation exactly once we are close enough to
-	# the target's rotation
-	if is_equal_approx(stepify(rotation_degrees.y, 0.75), stepify(follow_target.rotation_degrees.y, 0.75)):
-		angle = 0
-		rotation_degrees.y = follow_target.rotation_degrees.y
-		centering_camera = false
+	# Stop centering the _camera and match the rotation exactly once we are close enough to
+	# the _target's rotation
+	if is_equal_approx(stepify(rotation_degrees.y, 0.75), stepify(_player.rotation_degrees.y, 0.75)):
+		_angle = 0
+		rotation_degrees.y = _player.rotation_degrees.y
+		_centering_camera = false
 	
 # We use this function to apply the deadzone for gamepads
 func _apply_gamepad_deadzone(var input_vector, var deadzone):
@@ -378,12 +412,12 @@ func _apply_gamepad_deadzone(var input_vector, var deadzone):
 # Lets us know when the player is touching a wall.
 func _on_WallDetector_body_entered(body):
 	if not body.is_in_group("exclude"):
-		touching_wall = true
+		_is_touching_wall = true
 
 # Lets us know when the player has stopped touching a wall.
 func _on_WallDetector_body_exited(body):
 	if not body.is_in_group("exclude"):
-		touching_wall = false
+		_is_touching_wall = false
 
 
 

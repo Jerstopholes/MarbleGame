@@ -71,9 +71,8 @@ var _is_touching_wall : bool = false
 var _hit_from_behind : bool = false
 var _angle : float = 0
 
-# Swithing and centering _camera tasks.
+# Used for centering the camera
 var _centering_camera : bool = false
-var _is_switching_camera : bool = false
 
 # The stored player
 var _player : Node
@@ -94,7 +93,6 @@ onready var _wall_detector = $WallDetector
 onready var _cam_input = $CameraInput
 onready var _detection_springarm = $XRotater/Camera/DetectionSpring
 onready var _fp_cam = $XRotater/FirstPersonCamera/Camera
-onready var _anim_player = $XRotater/FirstPersonCamera/AnimPlayer
 
 
 # Called when the node enters the scene tree for the first time.
@@ -229,16 +227,6 @@ func _update_camera_settings():
 	else:
 		# Rotation has happened so reset the counter
 		_frames = 0
-		
-	# Check to see if we are switching cameras.
-	if _is_switching_camera:
-		# Flip which cameras are active
-		_camera.current = !_camera.current
-		_fp_cam.current = !_camera.current
-		
-		# Play the fading in animation and set _is_switching_camera to false
-		_anim_player.play("FadingIn")
-		_is_switching_camera = false
 
 # Updates the positioning of the _camera
 func _update_camera_position():
@@ -347,39 +335,43 @@ func _occlusion_check():
 		# that are specified to wait. When either is true, pull the Camera forward.
 		if _frames >= frames_to_wait_before_collision or _hit_from_behind:
 			_camera_distance = lerp(_camera_distance, _tar_z, 0.4)
-
-
 	else:
-		# Determine the _camera's update strategy
+		# Determine the _camera's collision response strategy
 		if collision_response == collide_mode.INSTANT_FORWARD_SMOOTH_BACK:
 			# Smoothly lerp back to the _target's position (great for adventure games).
 			_camera_distance = lerp(_camera_distance, _tar_z, CollisionSmoothSpeed)
 		else:
 			# Snap back instantly (great for action games like third-person shooters)
 			_camera_distance = _tar_z
+			
+	# Update the camera's Z value with _camera_distance
 	_camera.transform.origin.z = _camera_distance
-
 
 # Changes the current distance of the _camera
 func _change_distance():
 	# Check if we are in First Person mode. If we are, we want to switch out of it before increasing the 
 	# distance of the _camera!
 	if _fp_cam.current:
-		_is_switching_camera = true
+		_switch_camera()
 	else:
 		_distance_index += 1
 	
 	# If we reach the end of _distance_array, but allow switching to first-person mode, 
-	# start back at the beginning of _distance_array but also set _is_switching_camera to true.
+	# start back at the beginning of _distance_array but also call _switch_camera().
 	if _distance_index == _distance_array.size() and enable_first_person:
-		_is_switching_camera = true
+		_switch_camera()
 		_distance_index = 0
 		
 	# If we reach the end of the _distance_array, start back at the beginning.
 	elif _distance_index >= _distance_array.size():
 		_distance_index = 0
-
-
+		
+func _switch_camera():
+	# Flip which cameras are active
+	if _camera.current:
+		_fp_cam.make_current()
+	elif _fp_cam.current:
+		_camera.make_current()
 
 # Rotates the _camera to face the same way as the player node
 func _center_camera():
